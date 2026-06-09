@@ -48,6 +48,13 @@ export const translations = {
     of: "of",
     toggleLanguage: "عربي",
     pdfError: "Could not read PDF. Please try a different file.",
+    pdfLargeFile: "Large PDF detected",
+    pdfLargeFileHint: "This PDF has {total} pages. Extract all or choose a range.",
+    pdfPageFrom: "From page",
+    pdfPageTo: "To page",
+    pdfExtractAll: "Extract All Pages",
+    pdfExtractRange: "Extract Range",
+    pdfPageRangeError: "Invalid page range.",
   },
   ar: {
     appTitle: "القراءة السريعة",
@@ -96,6 +103,13 @@ export const translations = {
     of: "من",
     toggleLanguage: "English",
     pdfError: "تعذّر قراءة ملف PDF. حاول ملفاً آخر.",
+    pdfLargeFile: "ملف PDF كبير",
+    pdfLargeFileHint: "هذا الملف يحتوي على {total} صفحة. استخرج الكل أو حدد نطاقاً.",
+    pdfPageFrom: "من صفحة",
+    pdfPageTo: "إلى صفحة",
+    pdfExtractAll: "استخراج كل الصفحات",
+    pdfExtractRange: "استخراج النطاق",
+    pdfPageRangeError: "نطاق الصفحات غير صحيح.",
   },
 } satisfies Record<Lang, Record<string, string>>;
 

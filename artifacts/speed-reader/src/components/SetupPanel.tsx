@@ -9,7 +9,9 @@ import { Upload, BookOpen, FileText, Loader2 } from "lucide-react";
 import { ReadingMode } from "@/lib/speed-reader";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Lang, translations } from "@/lib/i18n";
-import { extractTextFromPdf } from "@/lib/pdf-extract";
+import { extractTextFromPdf, getPdfPageCount } from "@/lib/pdf-extract";
+
+const LARGE_PDF_THRESHOLD = 100;
 
 export type ViewMode = "focused" | "page";
 
@@ -47,6 +49,12 @@ export function SetupPanel({
   const [pdfProgress, setPdfProgress] = useState<{ current: number; total: number } | null>(null);
   const [pdfError, setPdfError] = useState("");
 
+  const [pendingPdfFile, setPendingPdfFile] = useState<File | null>(null);
+  const [pdfTotalPages, setPdfTotalPages] = useState(0);
+  const [pdfRangeFrom, setPdfRangeFrom] = useState("1");
+  const [pdfRangeTo, setPdfRangeTo] = useState("100");
+  const [showRangePicker, setShowRangePicker] = useState(false);
+
   const handleTxtUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -58,22 +66,65 @@ export function SetupPanel({
     e.target.value = "";
   };
 
-  const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const runExtraction = async (file: File, range?: { from: number; to: number }) => {
     setPdfLoading(true);
     setPdfProgress(null);
     setPdfError("");
+    setShowRangePicker(false);
     try {
-      const extracted = await extractTextFromPdf(file, (p) => setPdfProgress(p));
-      setText(extracted);
+      const extracted = await extractTextFromPdf(file, (p) => setPdfProgress(p), range);
+      if (!extracted.trim()) {
+        setPdfError(t.pdfError);
+      } else {
+        setText(extracted);
+      }
     } catch {
       setPdfError(t.pdfError);
     } finally {
       setPdfLoading(false);
       setPdfProgress(null);
-      e.target.value = "";
+      setPendingPdfFile(null);
     }
+  };
+
+  const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+
+    setPdfError("");
+    setShowRangePicker(false);
+
+    try {
+      const totalPages = await getPdfPageCount(file);
+      if (totalPages > LARGE_PDF_THRESHOLD) {
+        setPendingPdfFile(file);
+        setPdfTotalPages(totalPages);
+        setPdfRangeFrom("1");
+        setPdfRangeTo(String(totalPages));
+        setShowRangePicker(true);
+      } else {
+        await runExtraction(file);
+      }
+    } catch {
+      setPdfError(t.pdfError);
+    }
+  };
+
+  const handleExtractAll = () => {
+    if (pendingPdfFile) runExtraction(pendingPdfFile);
+  };
+
+  const handleExtractRange = () => {
+    if (!pendingPdfFile) return;
+    const from = parseInt(pdfRangeFrom, 10);
+    const to = parseInt(pdfRangeTo, 10);
+    if (isNaN(from) || isNaN(to) || from < 1 || to < from || to > pdfTotalPages) {
+      setPdfError(t.pdfPageRangeError);
+      return;
+    }
+    setPdfError("");
+    runExtraction(pendingPdfFile, { from, to });
   };
 
   return (
@@ -127,22 +178,68 @@ export function SetupPanel({
           </div>
         </div>
 
+        {/* Large PDF range picker */}
+        {showRangePicker && !pdfLoading && (
+          <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-700 p-4 space-y-3">
+            <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">
+              {t.pdfLargeFile}
+            </p>
+            <p className="text-xs text-amber-700 dark:text-amber-400">
+              {t.pdfLargeFileHint.replace("{total}", String(pdfTotalPages))}
+            </p>
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex items-center gap-2">
+                <Label className="text-xs whitespace-nowrap">{t.pdfPageFrom}</Label>
+                <input
+                  type="number"
+                  min={1}
+                  max={pdfTotalPages}
+                  value={pdfRangeFrom}
+                  onChange={(e) => setPdfRangeFrom(e.target.value)}
+                  className="w-20 rounded border border-border bg-background px-2 py-1 text-sm text-center"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <Label className="text-xs whitespace-nowrap">{t.pdfPageTo}</Label>
+                <input
+                  type="number"
+                  min={1}
+                  max={pdfTotalPages}
+                  value={pdfRangeTo}
+                  onChange={(e) => setPdfRangeTo(e.target.value)}
+                  className="w-20 rounded border border-border bg-background px-2 py-1 text-sm text-center"
+                />
+              </div>
+              <Button size="sm" variant="outline" onClick={handleExtractRange}>
+                {t.pdfExtractRange}
+              </Button>
+              <Button size="sm" onClick={handleExtractAll}>
+                {t.pdfExtractAll}
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* PDF progress bar */}
-        {pdfLoading && pdfProgress && (
+        {pdfLoading && (
           <div className="space-y-1.5" data-testid="pdf-progress">
             <div className="flex justify-between text-xs text-muted-foreground font-mono">
               <span>{t.uploadingPdf}</span>
-              <span>{pdfProgress.current} / {pdfProgress.total} {lang === "ar" ? "صفحة" : "pages"}</span>
+              {pdfProgress && (
+                <span>{pdfProgress.current} / {pdfProgress.total} {lang === "ar" ? "صفحة" : "pages"}</span>
+              )}
             </div>
             <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
               <div
                 className="h-full bg-primary transition-all duration-200 rounded-full"
-                style={{ width: `${Math.round((pdfProgress.current / pdfProgress.total) * 100)}%` }}
+                style={{ width: pdfProgress ? `${Math.round((pdfProgress.current / pdfProgress.total) * 100)}%` : "5%" }}
               />
             </div>
-            <p className="text-xs text-muted-foreground text-center">
-              {Math.round((pdfProgress.current / pdfProgress.total) * 100)}%
-            </p>
+            {pdfProgress && (
+              <p className="text-xs text-muted-foreground text-center">
+                {Math.round((pdfProgress.current / pdfProgress.total) * 100)}%
+              </p>
+            )}
           </div>
         )}
 
