@@ -44,6 +44,7 @@ export function SetupPanel({
   const txtInputRef = useRef<HTMLInputElement>(null);
   const pdfInputRef = useRef<HTMLInputElement>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfProgress, setPdfProgress] = useState<{ current: number; total: number } | null>(null);
   const [pdfError, setPdfError] = useState("");
 
   const handleTxtUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -61,14 +62,16 @@ export function SetupPanel({
     const file = e.target.files?.[0];
     if (!file) return;
     setPdfLoading(true);
+    setPdfProgress(null);
     setPdfError("");
     try {
-      const extracted = await extractTextFromPdf(file);
+      const extracted = await extractTextFromPdf(file, (p) => setPdfProgress(p));
       setText(extracted);
     } catch {
       setPdfError(t.pdfError);
     } finally {
       setPdfLoading(false);
+      setPdfProgress(null);
       e.target.value = "";
     }
   };
@@ -123,6 +126,26 @@ export function SetupPanel({
             </Button>
           </div>
         </div>
+
+        {/* PDF progress bar */}
+        {pdfLoading && pdfProgress && (
+          <div className="space-y-1.5" data-testid="pdf-progress">
+            <div className="flex justify-between text-xs text-muted-foreground font-mono">
+              <span>{t.uploadingPdf}</span>
+              <span>{pdfProgress.current} / {pdfProgress.total} {lang === "ar" ? "صفحة" : "pages"}</span>
+            </div>
+            <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
+              <div
+                className="h-full bg-primary transition-all duration-200 rounded-full"
+                style={{ width: `${Math.round((pdfProgress.current / pdfProgress.total) * 100)}%` }}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground text-center">
+              {Math.round((pdfProgress.current / pdfProgress.total) * 100)}%
+            </p>
+          </div>
+        )}
+
         {pdfError && <p className="text-sm text-destructive">{pdfError}</p>}
         <Textarea
           id="text-input"
