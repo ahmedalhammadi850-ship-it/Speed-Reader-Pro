@@ -5,14 +5,11 @@ import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Upload, BookOpen, FileText, Loader2 } from "lucide-react";
+import { Upload, BookOpen, FileText, Loader2, ChevronUp, ChevronDown } from "lucide-react";
 import { ReadingMode } from "@/lib/speed-reader";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Lang, translations } from "@/lib/i18n";
-import { extractTextFromPdf } from "@/lib/pdf-extract";
-
-// Files larger than this size (bytes) are treated as "large" → show range picker
-const LARGE_PDF_SIZE_BYTES = 3 * 1024 * 1024; // 3 MB ≈ 100+ pages for typical PDFs
+import { openPdf, PdfHandle } from "@/lib/pdf-extract";
 
 export type ViewMode = "focused" | "page";
 
@@ -30,6 +27,10 @@ interface SetupPanelProps {
   viewMode: ViewMode;
   setViewMode: (v: ViewMode) => void;
   onStart: () => void;
+  pdfHandle: PdfHandle | null;
+  setPdfHandle: (h: PdfHandle | null) => void;
+  pdfStartPage: number;
+  setPdfStartPage: (n: number) => void;
   t: typeof translations["en"];
   lang: Lang;
   onToggleLang: () => void;
@@ -42,94 +43,52 @@ export function SetupPanel({
   chunkSize, setChunkSize,
   directionOverride, setDirectionOverride,
   viewMode, setViewMode,
-  onStart, t, lang, onToggleLang
+  onStart,
+  pdfHandle, setPdfHandle,
+  pdfStartPage, setPdfStartPage,
+  t, lang, onToggleLang
 }: SetupPanelProps) {
   const txtInputRef = useRef<HTMLInputElement>(null);
   const pdfInputRef = useRef<HTMLInputElement>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
-  const [pdfProgress, setPdfProgress] = useState<{ current: number; total: number } | null>(null);
   const [pdfError, setPdfError] = useState("");
-
-  const [pendingPdfFile, setPendingPdfFile] = useState<File | null>(null);
-  const [pdfTotalPages, setPdfTotalPages] = useState<number | null>(null);
-  const [pdfRangeFrom, setPdfRangeFrom] = useState("1");
-  const [pdfRangeTo, setPdfRangeTo] = useState("100");
-  const [showRangePicker, setShowRangePicker] = useState(false);
 
   const handleTxtUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
-      if (typeof ev.target?.result === "string") setText(ev.target.result);
+      if (typeof ev.target?.result === "string") {
+        setText(ev.target.result);
+        setPdfHandle(null);
+      }
     };
     reader.readAsText(file);
     e.target.value = "";
   };
 
-  const runExtraction = async (file: File, range?: { from: number; to: number }) => {
-    setPdfLoading(true);
-    setPdfProgress(null);
-    setPdfError("");
-    setShowRangePicker(false);
-    try {
-      const { text: extracted, totalPages } = await extractTextFromPdf(
-        file,
-        (p) => setPdfProgress(p),
-        range
-      );
-      setPdfTotalPages(totalPages);
-      if (!extracted.trim()) {
-        setPdfError(lang === "ar"
-          ? "لا يحتوي هذا الملف على نص قابل للاستخراج (قد يكون مسحاً ضوئياً)."
-          : "No extractable text found. This PDF may be a scanned image.");
-      } else {
-        setText(extracted);
-      }
-    } catch (err) {
-      console.error("PDF extraction error:", err);
-      setPdfError(t.pdfError);
-    } finally {
-      setPdfLoading(false);
-      setPdfProgress(null);
-      setPendingPdfFile(null);
-    }
-  };
-
-  const handlePdfUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = "";
-
     setPdfError("");
-    setShowRangePicker(false);
-    setPdfTotalPages(null);
-
-    if (file.size > LARGE_PDF_SIZE_BYTES) {
-      setPendingPdfFile(file);
-      setPdfRangeFrom("1");
-      setPdfRangeTo("100");
-      setShowRangePicker(true);
-    } else {
-      runExtraction(file);
+    setPdfLoading(true);
+    try {
+      if (pdfHandle) await pdfHandle.destroy();
+      const handle = await openPdf(file);
+      setPdfHandle(handle);
+      setPdfStartPage(1);
+      setText("");
+    } catch (err) {
+      console.error("PDF open error:", err);
+      setPdfError(t.pdfError);
+      setPdfHandle(null);
+    } finally {
+      setPdfLoading(false);
     }
   };
 
-  const handleExtractAll = () => {
-    if (pendingPdfFile) runExtraction(pendingPdfFile);
-  };
-
-  const handleExtractRange = () => {
-    if (!pendingPdfFile) return;
-    const from = parseInt(pdfRangeFrom, 10);
-    const to = parseInt(pdfRangeTo, 10);
-    if (isNaN(from) || isNaN(to) || from < 1 || to < from) {
-      setPdfError(t.pdfPageRangeError);
-      return;
-    }
-    setPdfError("");
-    runExtraction(pendingPdfFile, { from, to });
-  };
+  const canStart = pdfHandle ? true : text.trim().length > 0;
 
   return (
     <div className="max-w-3xl mx-auto p-6 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -156,7 +115,7 @@ export function SetupPanel({
         </div>
       </div>
 
-      {/* Text Input */}
+      {/* Text / PDF Input */}
       <div className="space-y-4 bg-card border border-border p-6 rounded-xl shadow-sm">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <Label htmlFor="text-input" className="text-base font-semibold">{t.yourText}</Label>
@@ -175,93 +134,72 @@ export function SetupPanel({
               data-testid="button-upload-pdf"
             >
               {pdfLoading
-                ? <><Loader2 className="w-4 h-4 me-2 animate-spin" />{t.uploadingPdf}</>
+                ? <><Loader2 className="w-4 h-4 me-2 animate-spin" />{t.pdfLoading}</>
                 : <><FileText className="w-4 h-4 me-2" />{t.uploadPdf}</>
               }
             </Button>
           </div>
         </div>
 
-        {/* Large PDF range picker */}
-        {showRangePicker && !pdfLoading && (
-          <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-700 p-4 space-y-3">
-            <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">
-              {t.pdfLargeFile}
-            </p>
-            <p className="text-xs text-amber-700 dark:text-amber-400">
-              {lang === "ar"
-                ? "الملف كبير. يمكنك استخراج كل الصفحات أو تحديد نطاق معين لتسريع المعالجة."
-                : "Large file detected. Extract all pages or choose a range for faster processing."}
-            </p>
-            <div className="flex items-center gap-3 flex-wrap">
-              <div className="flex items-center gap-2">
-                <Label className="text-xs whitespace-nowrap">{t.pdfPageFrom}</Label>
-                <input
-                  type="number"
-                  min={1}
-                  value={pdfRangeFrom}
-                  onChange={(e) => setPdfRangeFrom(e.target.value)}
-                  className="w-20 rounded border border-border bg-background px-2 py-1 text-sm text-center"
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                <Label className="text-xs whitespace-nowrap">{t.pdfPageTo}</Label>
-                <input
-                  type="number"
-                  min={1}
-                  value={pdfRangeTo}
-                  onChange={(e) => setPdfRangeTo(e.target.value)}
-                  className="w-20 rounded border border-border bg-background px-2 py-1 text-sm text-center"
-                />
-              </div>
-              <Button size="sm" variant="outline" onClick={handleExtractRange}>
-                {t.pdfExtractRange}
-              </Button>
-              <Button size="sm" onClick={handleExtractAll}>
-                {t.pdfExtractAll}
-              </Button>
-            </div>
-            {pdfTotalPages !== null && (
-              <p className="text-xs text-amber-600 dark:text-amber-400">
-                {lang === "ar" ? `إجمالي الصفحات: ${pdfTotalPages}` : `Total pages: ${pdfTotalPages}`}
-              </p>
-            )}
-          </div>
-        )}
-
-        {/* PDF progress bar */}
-        {pdfLoading && (
-          <div className="space-y-1.5" data-testid="pdf-progress">
-            <div className="flex justify-between text-xs text-muted-foreground font-mono">
-              <span>{t.uploadingPdf}</span>
-              {pdfProgress && (
-                <span>{pdfProgress.current} / {pdfProgress.total} {lang === "ar" ? "صفحة" : "pages"}</span>
-              )}
-            </div>
-            <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
-              <div
-                className="h-full bg-primary transition-all duration-200 rounded-full"
-                style={{ width: pdfProgress ? `${Math.round((pdfProgress.current / pdfProgress.total) * 100)}%` : "5%" }}
-              />
-            </div>
-            {pdfProgress && (
-              <p className="text-xs text-muted-foreground text-center">
-                {Math.round((pdfProgress.current / pdfProgress.total) * 100)}%
-              </p>
-            )}
-          </div>
-        )}
-
         {pdfError && <p className="text-sm text-destructive">{pdfError}</p>}
-        <Textarea
-          id="text-input"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder={t.pastePlaceholder}
-          className="min-h-[200px] resize-y font-serif text-base"
-          dir="auto"
-          data-testid="input-text"
-        />
+
+        {/* PDF loaded — page picker */}
+        {pdfHandle && !pdfLoading && (
+          <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 space-y-3">
+            <div className="flex items-center gap-2 text-sm font-semibold text-primary">
+              <FileText className="w-4 h-4" />
+              {t.pdfLoaded} — {pdfHandle.numPages} {t.pdfPages}
+            </div>
+            <div className="flex items-center gap-3">
+              <Label className="text-sm whitespace-nowrap">{t.pdfStartPage}</Label>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setPdfStartPage(Math.max(1, pdfStartPage - 1))}
+                  disabled={pdfStartPage <= 1}
+                >
+                  <ChevronDown className="w-4 h-4" />
+                </Button>
+                <input
+                  type="number"
+                  min={1}
+                  max={pdfHandle.numPages}
+                  value={pdfStartPage}
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value, 10);
+                    if (!isNaN(v) && v >= 1 && v <= pdfHandle.numPages) setPdfStartPage(v);
+                  }}
+                  className="w-16 rounded border border-border bg-background px-2 py-1 text-sm text-center"
+                />
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setPdfStartPage(Math.min(pdfHandle.numPages, pdfStartPage + 1))}
+                  disabled={pdfStartPage >= pdfHandle.numPages}
+                >
+                  <ChevronUp className="w-4 h-4" />
+                </Button>
+                <span className="text-sm text-muted-foreground ms-1">/ {pdfHandle.numPages}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Plain text input (shown only when no PDF) */}
+        {!pdfHandle && (
+          <Textarea
+            id="text-input"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder={t.pastePlaceholder}
+            className="min-h-[200px] resize-y font-serif text-base"
+            dir="auto"
+            data-testid="input-text"
+          />
+        )}
       </div>
 
       {/* Settings Grid */}
@@ -392,11 +330,16 @@ export function SetupPanel({
         <Button
           size="lg"
           onClick={onStart}
-          disabled={!text.trim() || pdfLoading}
+          disabled={!canStart || pdfLoading}
           className="w-full md:w-auto text-lg px-8 py-6 h-auto"
           data-testid="button-start"
         >
           {t.startReading}
+          {pdfHandle && (
+            <span className="ms-2 text-sm opacity-70">
+              ({t.pdfPage} {pdfStartPage})
+            </span>
+          )}
         </Button>
       </div>
     </div>

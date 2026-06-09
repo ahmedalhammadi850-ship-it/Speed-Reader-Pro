@@ -19,10 +19,11 @@ interface ReaderViewProps {
   t: typeof translations["en"];
   lang: Lang;
   onToggleLang: () => void;
+  pdfPageInfo?: { current: number; total: number };
 }
 
 export function ReaderView({
-  text, wpm, mode, chunkSize, directionOverride, onBack, onComplete, t, lang, onToggleLang
+  text, wpm, mode, chunkSize, directionOverride, onBack, onComplete, t, lang, onToggleLang, pdfPageInfo
 }: ReaderViewProps) {
   const {
     chunks,

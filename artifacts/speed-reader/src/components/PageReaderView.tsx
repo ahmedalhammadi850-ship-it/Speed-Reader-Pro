@@ -22,6 +22,7 @@ interface PageReaderViewProps {
   t: typeof translations["en"];
   lang: Lang;
   onToggleLang: () => void;
+  pdfPageInfo?: { current: number; total: number };
 }
 
 export function PageReaderView({

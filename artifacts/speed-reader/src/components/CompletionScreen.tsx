@@ -1,9 +1,17 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, RotateCcw, Settings } from "lucide-react";
+import { CheckCircle2, RotateCcw, Settings, ChevronRight, ChevronLeft } from "lucide-react";
 import { motion } from "framer-motion";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Lang, translations } from "@/lib/i18n";
+
+interface PdfNav {
+  current: number;
+  total: number;
+  onNext?: () => void;
+  onPrev?: () => void;
+  error?: string;
+}
 
 interface CompletionScreenProps {
   stats: {
@@ -16,13 +24,17 @@ interface CompletionScreenProps {
   t: typeof translations["en"];
   lang: Lang;
   onToggleLang: () => void;
+  pdfNav?: PdfNav;
 }
 
-export function CompletionScreen({ stats, onRestart, onSetup, t, lang, onToggleLang }: CompletionScreenProps) {
+export function CompletionScreen({ stats, onRestart, onSetup, t, lang, onToggleLang, pdfNav }: CompletionScreenProps) {
   const timeSeconds = Math.round(stats.timeMs / 1000);
   const minutes = Math.floor(timeSeconds / 60);
   const seconds = timeSeconds % 60;
   const uiDir = lang === "ar" ? "rtl" : "ltr";
+
+  const PrevIcon = uiDir === "rtl" ? ChevronRight : ChevronLeft;
+  const NextIcon = uiDir === "rtl" ? ChevronLeft : ChevronRight;
 
   return (
     <div className="min-h-[100dvh] flex items-center justify-center p-6 bg-background" dir={uiDir}>
@@ -54,6 +66,11 @@ export function CompletionScreen({ stats, onRestart, onSetup, t, lang, onToggleL
         <div>
           <h2 className="text-3xl font-bold mb-2" data-testid="text-session-complete">{t.sessionComplete}</h2>
           <p className="text-muted-foreground">{t.sessionCompleteSubtitle}</p>
+          {pdfNav && (
+            <p className="text-sm text-primary mt-2 font-medium">
+              {t.pdfPage} {pdfNav.current} / {pdfNav.total}
+            </p>
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-4">
@@ -73,7 +90,39 @@ export function CompletionScreen({ stats, onRestart, onSetup, t, lang, onToggleL
           </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-4 pt-4">
+        {pdfNav?.error && (
+          <p className="text-sm text-destructive">{pdfNav.error}</p>
+        )}
+
+        {/* PDF page navigation */}
+        {pdfNav && (pdfNav.onPrev || pdfNav.onNext) && (
+          <div className="flex gap-3">
+            <Button
+              variant="outline"
+              size="lg"
+              onClick={pdfNav.onPrev}
+              disabled={!pdfNav.onPrev}
+              className="flex-1"
+              data-testid="button-prev-page"
+            >
+              <PrevIcon className="w-4 h-4 me-2" />
+              {t.pdfPrevPage}
+            </Button>
+            <Button
+              size="lg"
+              onClick={pdfNav.onNext}
+              disabled={!pdfNav.onNext}
+              className="flex-1"
+              data-testid="button-next-page"
+            >
+              {t.pdfNextPage}
+              <NextIcon className="w-4 h-4 ms-2" />
+            </Button>
+          </div>
+        )}
+
+        {/* Standard controls */}
+        <div className="flex flex-col sm:flex-row gap-4">
           <Button variant="outline" size="lg" onClick={onSetup} className="flex-1" data-testid="button-new-text">
             <Settings className="w-4 h-4 me-2" />
             {t.newText}
