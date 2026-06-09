@@ -9,7 +9,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { Lang, translations } from "@/lib/i18n";
 
-const CHUNKS_PER_PAGE = 12;
+const CHUNKS_PER_PAGE = 30;
 
 interface PageReaderViewProps {
   text: string;
@@ -223,7 +223,7 @@ export function PageReaderView({
             data-testid={`page-${pageIndex}`}
           >
             <div
-              className="max-w-3xl mx-auto px-8 py-10 text-lg md:text-xl leading-loose font-serif"
+              className="w-full h-full max-w-4xl mx-auto px-10 py-8 text-base md:text-lg leading-relaxed font-serif"
               dir={textDir}
             >
               {currentPageChunks.map((chunk, idx) => {
