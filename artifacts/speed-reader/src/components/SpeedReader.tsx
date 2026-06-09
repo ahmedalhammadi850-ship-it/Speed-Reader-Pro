@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import { SetupPanel, ViewMode } from "./SetupPanel";
 import { ReaderView } from "./ReaderView";
 import { PageReaderView } from "./PageReaderView";
@@ -7,6 +7,7 @@ import { ReadingMode } from "@/lib/speed-reader";
 import { useLanguage } from "@/hooks/use-language";
 import { translations } from "@/lib/i18n";
 import { PdfHandle } from "@/lib/pdf-extract";
+import { ocrCanvas, OcrProgress } from "@/lib/ocr";
 
 const SAMPLE_EN = `The ability to read faster and comprehend more is a vital skill in the modern world. Speed reading is not just about moving your eyes quickly across the page; it's about training your brain to process information in chunks rather than reading word by word. By minimizing subvocalization—the internal voice that pronounces every word—you can dramatically increase your reading rate. This tool is designed to help you focus, maintain a steady rhythm, and gradually push your limits. Take a deep breath, clear your mind, and let the words flow.`;
 
@@ -33,32 +34,58 @@ export function SpeedReader() {
   const [pageLoadError, setPageLoadError] = useState("");
   const [readingText, setReadingText] = useState("");
 
-  /** Load a page, skipping empties. Returns { text, page } — page is the actual page used. */
-  const loadPage = useCallback(async (
+  // OCR progress state
+  const [ocrStatus, setOcrStatus] = useState<OcrProgress | null>(null);
+  // Cache OCR results per page to avoid re-running
+  const ocrCache = useRef<Map<number, string>>(new Map());
+
+  /**
+   * Get text for a page. For scanned PDFs uses OCR; for digital PDFs uses embedded text.
+   * Returns null if extraction fails or produces nothing.
+   */
+  const getTextForPage = useCallback(async (
     handle: PdfHandle,
-    startPage: number
+    pageNum: number
   ): Promise<{ text: string; page: number } | null> => {
-    const foundPage = await handle.findNextPageWithText(startPage);
-    if (foundPage === null) return null;
-    const text = await handle.getPageText(foundPage);
-    return { text, page: foundPage };
-  }, []);
+    if (handle.isScanned) {
+      // Check cache first
+      if (ocrCache.current.has(pageNum)) {
+        const cached = ocrCache.current.get(pageNum)!;
+        return cached ? { text: cached, page: pageNum } : null;
+      }
+      setOcrStatus({ status: "loading tesseract core", progress: 0 });
+      const canvas = await handle.renderPageToCanvas(pageNum, 2.5);
+      // Detect language: use Arabic+English for RTL, English only for LTR
+      const ocrLang = lang === "ar" ? "ara+eng" : "eng";
+      const extractedText = await ocrCanvas(canvas, ocrLang, (p) => setOcrStatus(p));
+      setOcrStatus(null);
+      ocrCache.current.set(pageNum, extractedText);
+      return extractedText.trim() ? { text: extractedText, page: pageNum } : null;
+    } else {
+      // Digital PDF — skip empty pages forward
+      const foundPage = await handle.findNextPageWithText(pageNum);
+      if (foundPage === null) return null;
+      const txt = await handle.getPageText(foundPage);
+      return txt.trim() ? { text: txt, page: foundPage } : null;
+    }
+  }, [lang]);
 
   const handleStart = useCallback(async () => {
     if (pdfHandle) {
       setView("loading");
       setPageLoadError("");
       try {
-        const result = await loadPage(pdfHandle, pdfStartPage);
+        const result = await getTextForPage(pdfHandle, pdfStartPage);
         if (!result) {
-          setPageLoadError(t.pdfPageEmpty);
+          setPageLoadError(t.ocrError);
           setView("setup");
           return;
         }
         setPdfCurrentPage(result.page);
         setReadingText(result.text);
         setView("reading");
-      } catch {
+      } catch (err) {
+        console.error("PDF load error", err);
         setPageLoadError(t.pdfError);
         setView("setup");
       }
@@ -67,7 +94,7 @@ export function SpeedReader() {
       setPdfCurrentPage(0);
       setView("reading");
     }
-  }, [pdfHandle, pdfStartPage, text, loadPage, t]);
+  }, [pdfHandle, pdfStartPage, text, getTextForPage, t]);
 
   const handleComplete = useCallback((s: { totalWords: number; timeMs: number; avgWpm: number }) => {
     setStats(s);
@@ -81,20 +108,21 @@ export function SpeedReader() {
     setView("loading");
     setPageLoadError("");
     try {
-      const result = await loadPage(pdfHandle, nextStart);
+      const result = await getTextForPage(pdfHandle, nextStart);
       if (!result) {
-        setPageLoadError(t.pdfPageEmpty);
+        setPageLoadError(t.ocrError);
         setView("completed");
         return;
       }
       setPdfCurrentPage(result.page);
       setReadingText(result.text);
       setView("reading");
-    } catch {
+    } catch (err) {
+      console.error("Next page error", err);
       setPageLoadError(t.pdfError);
       setView("completed");
     }
-  }, [pdfHandle, pdfCurrentPage, loadPage, t]);
+  }, [pdfHandle, pdfCurrentPage, getTextForPage, t]);
 
   const handlePrevPage = useCallback(async () => {
     if (!pdfHandle) return;
@@ -103,25 +131,43 @@ export function SpeedReader() {
     setView("loading");
     setPageLoadError("");
     try {
-      // Search backward: try up to 30 pages back
-      let found: { text: string; page: number } | null = null;
-      for (let p = prevStart; p >= Math.max(1, prevStart - 29); p--) {
-        const txt = await pdfHandle.getPageText(p);
-        if (txt.trim()) { found = { text: txt, page: p }; break; }
-      }
-      if (!found) {
+      if (pdfHandle.isScanned) {
+        const result = await getTextForPage(pdfHandle, prevStart);
+        if (!result) {
+          setPageLoadError(t.ocrError);
+          setView("completed");
+          return;
+        }
+        setPdfCurrentPage(result.page);
+        setReadingText(result.text);
+        setView("reading");
+      } else {
+        // Search backward for digital PDFs
+        for (let p = prevStart; p >= Math.max(1, prevStart - 29); p--) {
+          const txt = await pdfHandle.getPageText(p);
+          if (txt.trim()) {
+            setPdfCurrentPage(p);
+            setReadingText(txt);
+            setView("reading");
+            return;
+          }
+        }
         setPageLoadError(t.pdfPageEmpty);
         setView("completed");
-        return;
       }
-      setPdfCurrentPage(found.page);
-      setReadingText(found.text);
-      setView("reading");
-    } catch {
+    } catch (err) {
+      console.error("Prev page error", err);
       setPageLoadError(t.pdfError);
       setView("completed");
     }
-  }, [pdfHandle, pdfCurrentPage, t]);
+  }, [pdfHandle, pdfCurrentPage, getTextForPage, t]);
+
+  // Reset OCR cache when a new PDF is loaded
+  const handleSetPdfHandle = useCallback((h: PdfHandle | null) => {
+    ocrCache.current.clear();
+    setPdfHandle(h);
+    setPageLoadError("");
+  }, []);
 
   const sharedReaderProps = {
     text: readingText,
@@ -138,6 +184,17 @@ export function SpeedReader() {
       ? { current: pdfCurrentPage, total: pdfHandle.numPages }
       : undefined,
   };
+
+  // Build loading message
+  const loadingMsg = (() => {
+    if (ocrStatus) {
+      const pct = Math.round(ocrStatus.progress * 100);
+      const isLoading = ocrStatus.status.includes("loading") || ocrStatus.status.includes("initializing");
+      const label = isLoading ? t.ocrLoading : `${t.ocrRunning} (${pct}%)`;
+      return { label, progress: ocrStatus.progress };
+    }
+    return { label: `${t.pdfReadingPage} ${pdfCurrentPage || pdfStartPage}…`, progress: null };
+  })();
 
   return (
     <>
@@ -158,7 +215,7 @@ export function SpeedReader() {
             setViewMode={setViewMode}
             onStart={handleStart}
             pdfHandle={pdfHandle}
-            setPdfHandle={setPdfHandle}
+            setPdfHandle={handleSetPdfHandle}
             pdfStartPage={pdfStartPage}
             setPdfStartPage={setPdfStartPage}
             pageLoadError={pageLoadError}
@@ -171,11 +228,17 @@ export function SpeedReader() {
 
       {view === "loading" && (
         <div className="min-h-[100dvh] flex items-center justify-center bg-background">
-          <div className="text-center space-y-4">
-            <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
-            <p className="text-muted-foreground text-sm">
-              {t.pdfReadingPage} {pdfCurrentPage || pdfStartPage}…
-            </p>
+          <div className="text-center space-y-5 max-w-xs px-6">
+            <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
+            <p className="text-muted-foreground text-sm font-medium">{loadingMsg.label}</p>
+            {loadingMsg.progress !== null && (
+              <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+                <div
+                  className="bg-primary h-2 rounded-full transition-all duration-200"
+                  style={{ width: `${Math.round(loadingMsg.progress * 100)}%` }}
+                />
+              </div>
+            )}
           </div>
         </div>
       )}

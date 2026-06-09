@@ -57,8 +57,11 @@ export const translations = {
     pdfPrevPage: "Previous Page",
     pdfPageEmpty: "No readable text found in this range. Try a different starting page.",
     pdfReadingPage: "Loading page",
-    pdfScannedWarning: "This PDF appears to be scanned images — no digital text was found.",
-    pdfScannedHint: "Speed reading only works with text-based PDFs. Try a PDF that was exported digitally (not scanned).",
+    pdfScannedWarning: "Scanned PDF detected — text will be extracted using OCR.",
+    pdfScannedHint: "OCR (optical character recognition) reads text from images. It may take 5–15 seconds per page.",
+    ocrRunning: "Reading page with OCR",
+    ocrLoading: "Loading OCR engine",
+    ocrError: "OCR failed — could not extract text from this page.",
   },
   ar: {
     appTitle: "القراءة السريعة",
@@ -116,8 +119,11 @@ export const translations = {
     pdfPrevPage: "الصفحة السابقة",
     pdfPageEmpty: "لا يوجد نص قابل للقراءة في هذا النطاق. جرّب صفحة بداية مختلفة.",
     pdfReadingPage: "جارٍ تحميل الصفحة",
-    pdfScannedWarning: "هذا الملف يبدو أنه مسحوح ضوئياً — لا يحتوي نصاً رقمياً.",
-    pdfScannedHint: "القراءة السريعة تعمل فقط مع ملفات PDF الرقمية (النصية). استخدم ملفاً تم تصديره رقمياً وليس مسحاً ضوئياً.",
+    pdfScannedWarning: "ملف مسحوح ضوئياً — سيتم استخراج النص تلقائياً بالـ OCR.",
+    pdfScannedHint: "تقنية OCR تقرأ النص من الصور. قد تأخذ 5–15 ثانية لكل صفحة.",
+    ocrRunning: "جارٍ قراءة الصفحة بالـ OCR",
+    ocrLoading: "جارٍ تحميل محرك OCR",
+    ocrError: "فشل الـ OCR — تعذّر استخراج النص من هذه الصفحة.",
   },
 } satisfies Record<Lang, Record<string, string>>;
 

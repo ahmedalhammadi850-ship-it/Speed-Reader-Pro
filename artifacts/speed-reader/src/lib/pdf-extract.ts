@@ -10,7 +10,9 @@ export interface PdfHandle {
   numPages: number;
   isScanned: boolean;
   getPageText: (pageNumber: number) => Promise<string>;
-  /** Find the next page ≥ startPage that has text. Returns null if none found. */
+  /** Render a page to an HTMLCanvasElement (for OCR). */
+  renderPageToCanvas: (pageNumber: number, scale?: number) => Promise<HTMLCanvasElement>;
+  /** Find the next page ≥ startPage that has embedded text. Returns null if none found. */
   findNextPageWithText: (startPage: number, maxLook?: number) => Promise<number | null>;
   destroy: () => Promise<void>;
 }
@@ -35,19 +37,25 @@ export async function openPdf(file: File): Promise<PdfHandle> {
   const loadingTask = pdfjsLib.getDocument({ data: typedArray });
   const doc: PDFDocumentProxy = await loadingTask.promise;
 
-  // Sample up to 8 pages spread across the document to detect scanned PDFs
   const total = doc.numPages;
-  const sampleIndices = new Set<number>();
-  sampleIndices.add(1);
-  if (total > 1) sampleIndices.add(Math.ceil(total * 0.1));
-  if (total > 5) sampleIndices.add(Math.ceil(total * 0.25));
-  if (total > 10) sampleIndices.add(Math.ceil(total * 0.5));
-  if (total > 20) sampleIndices.add(Math.ceil(total * 0.75));
+
+  // Sample up to 6 pages spread across the document to detect scanned PDFs
+  const sampleIndices = new Set<number>([
+    1,
+    Math.ceil(total * 0.15),
+    Math.ceil(total * 0.3),
+    Math.ceil(total * 0.5),
+    Math.ceil(total * 0.7),
+    Math.ceil(total * 0.9),
+  ]);
 
   let hasText = false;
   for (const idx of sampleIndices) {
     const t = await extractPageText(doc, Math.min(idx, total));
-    if (t.trim().length > 20) { hasText = true; break; }
+    if (t.trim().length > 20) {
+      hasText = true;
+      break;
+    }
   }
 
   return {
@@ -56,6 +64,21 @@ export async function openPdf(file: File): Promise<PdfHandle> {
 
     async getPageText(pageNumber: number): Promise<string> {
       return extractPageText(doc, pageNumber);
+    },
+
+    async renderPageToCanvas(pageNumber: number, scale = 2.5): Promise<HTMLCanvasElement> {
+      if (pageNumber < 1 || pageNumber > doc.numPages) {
+        throw new Error(`Page ${pageNumber} out of range`);
+      }
+      const page = await doc.getPage(pageNumber);
+      const viewport = page.getViewport({ scale });
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.floor(viewport.width);
+      canvas.height = Math.floor(viewport.height);
+      const ctx = canvas.getContext("2d")!;
+      await page.render({ canvasContext: ctx, viewport }).promise;
+      page.cleanup();
+      return canvas;
     },
 
     async findNextPageWithText(startPage: number, maxLook = 30): Promise<number | null> {

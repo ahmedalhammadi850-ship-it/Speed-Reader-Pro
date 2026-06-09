@@ -147,17 +147,17 @@ export function SetupPanel({
 
         {/* PDF loaded — page picker */}
         {pdfHandle && !pdfLoading && (
-          <div className={`rounded-lg border p-4 space-y-3 ${pdfHandle.isScanned ? "border-destructive/40 bg-destructive/5" : "border-primary/30 bg-primary/5"}`}>
-            <div className={`flex items-center gap-2 text-sm font-semibold ${pdfHandle.isScanned ? "text-destructive" : "text-primary"}`}>
+          <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 space-y-3">
+            <div className="flex items-center gap-2 text-sm font-semibold text-primary">
               <FileText className="w-4 h-4 shrink-0" />
               {t.pdfLoaded} — {pdfHandle.numPages} {t.pdfPages}
             </div>
 
-            {/* Scanned PDF warning */}
+            {/* Scanned PDF — OCR notice */}
             {pdfHandle.isScanned && (
-              <div className="rounded-md bg-destructive/10 border border-destructive/30 p-3 space-y-1">
-                <p className="text-sm font-semibold text-destructive">{t.pdfScannedWarning}</p>
-                <p className="text-xs text-destructive/80">{t.pdfScannedHint}</p>
+              <div className="rounded-md bg-amber-500/10 border border-amber-500/30 p-3 space-y-1">
+                <p className="text-sm font-semibold text-amber-700 dark:text-amber-400">{t.pdfScannedWarning}</p>
+                <p className="text-xs text-amber-600/80 dark:text-amber-400/70">{t.pdfScannedHint}</p>
               </div>
             )}
 
@@ -166,8 +166,8 @@ export function SetupPanel({
               <p className="text-sm text-destructive font-medium">{pageLoadError}</p>
             )}
 
-            {/* Only show page picker for non-scanned PDFs */}
-            {!pdfHandle.isScanned && (
+            {/* Page picker — always show */}
+            {(
               <div className="flex items-center gap-3">
                 <Label className="text-sm whitespace-nowrap">{t.pdfStartPage}</Label>
                 <div className="flex items-center gap-1">
