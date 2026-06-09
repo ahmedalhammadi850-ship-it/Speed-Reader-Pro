@@ -1,0 +1,20 @@
+kind = "web"
+previewPath = "/"
+title = "Speed Reader"
+version = "1.0.0"
+
+[[services]]
+localPort = 24913
+name = "web"
+paths = ["/"]
+
+[services.env]
+PORT = "24913"
+BASE_PATH = "/"
+
+[services.development]
+run = "pnpm --filter @workspace/speed-reader run dev"
+
+[services.production]
+build = "pnpm --filter @workspace/speed-reader run build"
+serve = "static"
