@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Speed Reading Trainer"
+version = "1.0.0"
+id = "artifacts/speed-reader"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 24913
+
+[services.development]
+run = "pnpm --filter @workspace/speed-reader run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/speed-reader", "run", "build" ]
+publicDir = "artifacts/speed-reader/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "24913"
+BASE_PATH = "/"
