@@ -55,8 +55,10 @@ export const translations = {
     pdfStartPage: "Start from page",
     pdfNextPage: "Next Page",
     pdfPrevPage: "Previous Page",
-    pdfPageEmpty: "This page has no readable text. Skipping...",
-    pdfReadingPage: "Reading page",
+    pdfPageEmpty: "No readable text found in this range. Try a different starting page.",
+    pdfReadingPage: "Loading page",
+    pdfScannedWarning: "This PDF appears to be scanned images — no digital text was found.",
+    pdfScannedHint: "Speed reading only works with text-based PDFs. Try a PDF that was exported digitally (not scanned).",
   },
   ar: {
     appTitle: "القراءة السريعة",
@@ -112,8 +114,10 @@ export const translations = {
     pdfStartPage: "ابدأ من الصفحة",
     pdfNextPage: "الصفحة التالية",
     pdfPrevPage: "الصفحة السابقة",
-    pdfPageEmpty: "هذه الصفحة لا تحتوي نصاً مقروءاً. تخطي...",
-    pdfReadingPage: "قراءة الصفحة",
+    pdfPageEmpty: "لا يوجد نص قابل للقراءة في هذا النطاق. جرّب صفحة بداية مختلفة.",
+    pdfReadingPage: "جارٍ تحميل الصفحة",
+    pdfScannedWarning: "هذا الملف يبدو أنه مسحوح ضوئياً — لا يحتوي نصاً رقمياً.",
+    pdfScannedHint: "القراءة السريعة تعمل فقط مع ملفات PDF الرقمية (النصية). استخدم ملفاً تم تصديره رقمياً وليس مسحاً ضوئياً.",
   },
 } satisfies Record<Lang, Record<string, string>>;
 

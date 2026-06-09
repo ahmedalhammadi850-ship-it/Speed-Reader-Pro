@@ -27,28 +27,21 @@ export function SpeedReader() {
   const [viewMode, setViewMode] = useState<ViewMode>("focused");
   const [stats, setStats] = useState({ totalWords: 0, timeMs: 0, avgWpm: 0 });
 
-  // PDF state
   const [pdfHandle, setPdfHandle] = useState<PdfHandle | null>(null);
   const [pdfStartPage, setPdfStartPage] = useState(1);
   const [pdfCurrentPage, setPdfCurrentPage] = useState(1);
   const [pageLoadError, setPageLoadError] = useState("");
-
-  // Active reading text (may differ from text when in PDF mode)
   const [readingText, setReadingText] = useState("");
 
-  const loadPdfPage = useCallback(async (handle: PdfHandle, pageNum: number): Promise<string> => {
-    let pageText = await handle.getPageText(pageNum);
-    // If this page is empty, try a few forward pages automatically
-    if (!pageText.trim()) {
-      for (let next = pageNum + 1; next <= Math.min(pageNum + 3, handle.numPages); next++) {
-        pageText = await handle.getPageText(next);
-        if (pageText.trim()) {
-          setPdfCurrentPage(next);
-          return pageText;
-        }
-      }
-    }
-    return pageText;
+  /** Load a page, skipping empties. Returns { text, page } — page is the actual page used. */
+  const loadPage = useCallback(async (
+    handle: PdfHandle,
+    startPage: number
+  ): Promise<{ text: string; page: number } | null> => {
+    const foundPage = await handle.findNextPageWithText(startPage);
+    if (foundPage === null) return null;
+    const text = await handle.getPageText(foundPage);
+    return { text, page: foundPage };
   }, []);
 
   const handleStart = useCallback(async () => {
@@ -56,14 +49,14 @@ export function SpeedReader() {
       setView("loading");
       setPageLoadError("");
       try {
-        const pageText = await loadPdfPage(pdfHandle, pdfStartPage);
-        setPdfCurrentPage(pdfStartPage);
-        if (!pageText.trim()) {
+        const result = await loadPage(pdfHandle, pdfStartPage);
+        if (!result) {
           setPageLoadError(t.pdfPageEmpty);
           setView("setup");
           return;
         }
-        setReadingText(pageText);
+        setPdfCurrentPage(result.page);
+        setReadingText(result.text);
         setView("reading");
       } catch {
         setPageLoadError(t.pdfError);
@@ -74,7 +67,7 @@ export function SpeedReader() {
       setPdfCurrentPage(0);
       setView("reading");
     }
-  }, [pdfHandle, pdfStartPage, text, loadPdfPage, t]);
+  }, [pdfHandle, pdfStartPage, text, loadPage, t]);
 
   const handleComplete = useCallback((s: { totalWords: number; timeMs: number; avgWpm: number }) => {
     setStats(s);
@@ -83,47 +76,52 @@ export function SpeedReader() {
 
   const handleNextPage = useCallback(async () => {
     if (!pdfHandle) return;
-    const next = pdfCurrentPage + 1;
-    if (next > pdfHandle.numPages) return;
+    const nextStart = pdfCurrentPage + 1;
+    if (nextStart > pdfHandle.numPages) return;
     setView("loading");
     setPageLoadError("");
     try {
-      const pageText = await loadPdfPage(pdfHandle, next);
-      setPdfCurrentPage(next);
-      if (!pageText.trim()) {
+      const result = await loadPage(pdfHandle, nextStart);
+      if (!result) {
         setPageLoadError(t.pdfPageEmpty);
         setView("completed");
         return;
       }
-      setReadingText(pageText);
+      setPdfCurrentPage(result.page);
+      setReadingText(result.text);
       setView("reading");
     } catch {
       setPageLoadError(t.pdfError);
       setView("completed");
     }
-  }, [pdfHandle, pdfCurrentPage, loadPdfPage, t]);
+  }, [pdfHandle, pdfCurrentPage, loadPage, t]);
 
   const handlePrevPage = useCallback(async () => {
     if (!pdfHandle) return;
-    const prev = pdfCurrentPage - 1;
-    if (prev < 1) return;
+    const prevStart = pdfCurrentPage - 1;
+    if (prevStart < 1) return;
     setView("loading");
     setPageLoadError("");
     try {
-      const pageText = await loadPdfPage(pdfHandle, prev);
-      setPdfCurrentPage(prev);
-      if (!pageText.trim()) {
+      // Search backward: try up to 30 pages back
+      let found: { text: string; page: number } | null = null;
+      for (let p = prevStart; p >= Math.max(1, prevStart - 29); p--) {
+        const txt = await pdfHandle.getPageText(p);
+        if (txt.trim()) { found = { text: txt, page: p }; break; }
+      }
+      if (!found) {
         setPageLoadError(t.pdfPageEmpty);
         setView("completed");
         return;
       }
-      setReadingText(pageText);
+      setPdfCurrentPage(found.page);
+      setReadingText(found.text);
       setView("reading");
     } catch {
       setPageLoadError(t.pdfError);
       setView("completed");
     }
-  }, [pdfHandle, pdfCurrentPage, loadPdfPage, t]);
+  }, [pdfHandle, pdfCurrentPage, t]);
 
   const sharedReaderProps = {
     text: readingText,
@@ -163,13 +161,11 @@ export function SpeedReader() {
             setPdfHandle={setPdfHandle}
             pdfStartPage={pdfStartPage}
             setPdfStartPage={setPdfStartPage}
+            pageLoadError={pageLoadError}
             t={t}
             lang={lang}
             onToggleLang={toggle}
           />
-          {pageLoadError && (
-            <p className="text-center text-destructive text-sm mt-4">{pageLoadError}</p>
-          )}
         </div>
       )}
 
@@ -195,9 +191,7 @@ export function SpeedReader() {
       {view === "completed" && (
         <CompletionScreen
           stats={stats}
-          onRestart={() => {
-            setView("reading");
-          }}
+          onRestart={() => setView("reading")}
           onSetup={() => setView("setup")}
           t={t}
           lang={lang}

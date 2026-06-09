@@ -31,6 +31,7 @@ interface SetupPanelProps {
   setPdfHandle: (h: PdfHandle | null) => void;
   pdfStartPage: number;
   setPdfStartPage: (n: number) => void;
+  pageLoadError: string;
   t: typeof translations["en"];
   lang: Lang;
   onToggleLang: () => void;
@@ -46,6 +47,7 @@ export function SetupPanel({
   onStart,
   pdfHandle, setPdfHandle,
   pdfStartPage, setPdfStartPage,
+  pageLoadError,
   t, lang, onToggleLang
 }: SetupPanelProps) {
   const txtInputRef = useRef<HTMLInputElement>(null);
@@ -145,46 +147,63 @@ export function SetupPanel({
 
         {/* PDF loaded — page picker */}
         {pdfHandle && !pdfLoading && (
-          <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 space-y-3">
-            <div className="flex items-center gap-2 text-sm font-semibold text-primary">
-              <FileText className="w-4 h-4" />
+          <div className={`rounded-lg border p-4 space-y-3 ${pdfHandle.isScanned ? "border-destructive/40 bg-destructive/5" : "border-primary/30 bg-primary/5"}`}>
+            <div className={`flex items-center gap-2 text-sm font-semibold ${pdfHandle.isScanned ? "text-destructive" : "text-primary"}`}>
+              <FileText className="w-4 h-4 shrink-0" />
               {t.pdfLoaded} — {pdfHandle.numPages} {t.pdfPages}
             </div>
-            <div className="flex items-center gap-3">
-              <Label className="text-sm whitespace-nowrap">{t.pdfStartPage}</Label>
-              <div className="flex items-center gap-1">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => setPdfStartPage(Math.max(1, pdfStartPage - 1))}
-                  disabled={pdfStartPage <= 1}
-                >
-                  <ChevronDown className="w-4 h-4" />
-                </Button>
-                <input
-                  type="number"
-                  min={1}
-                  max={pdfHandle.numPages}
-                  value={pdfStartPage}
-                  onChange={(e) => {
-                    const v = parseInt(e.target.value, 10);
-                    if (!isNaN(v) && v >= 1 && v <= pdfHandle.numPages) setPdfStartPage(v);
-                  }}
-                  className="w-16 rounded border border-border bg-background px-2 py-1 text-sm text-center"
-                />
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => setPdfStartPage(Math.min(pdfHandle.numPages, pdfStartPage + 1))}
-                  disabled={pdfStartPage >= pdfHandle.numPages}
-                >
-                  <ChevronUp className="w-4 h-4" />
-                </Button>
-                <span className="text-sm text-muted-foreground ms-1">/ {pdfHandle.numPages}</span>
+
+            {/* Scanned PDF warning */}
+            {pdfHandle.isScanned && (
+              <div className="rounded-md bg-destructive/10 border border-destructive/30 p-3 space-y-1">
+                <p className="text-sm font-semibold text-destructive">{t.pdfScannedWarning}</p>
+                <p className="text-xs text-destructive/80">{t.pdfScannedHint}</p>
               </div>
-            </div>
+            )}
+
+            {/* pageLoadError feedback */}
+            {pageLoadError && (
+              <p className="text-sm text-destructive font-medium">{pageLoadError}</p>
+            )}
+
+            {/* Only show page picker for non-scanned PDFs */}
+            {!pdfHandle.isScanned && (
+              <div className="flex items-center gap-3">
+                <Label className="text-sm whitespace-nowrap">{t.pdfStartPage}</Label>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => setPdfStartPage(Math.max(1, pdfStartPage - 1))}
+                    disabled={pdfStartPage <= 1}
+                  >
+                    <ChevronDown className="w-4 h-4" />
+                  </Button>
+                  <input
+                    type="number"
+                    min={1}
+                    max={pdfHandle.numPages}
+                    value={pdfStartPage}
+                    onChange={(e) => {
+                      const v = parseInt(e.target.value, 10);
+                      if (!isNaN(v) && v >= 1 && v <= pdfHandle.numPages) setPdfStartPage(v);
+                    }}
+                    className="w-16 rounded border border-border bg-background px-2 py-1 text-sm text-center"
+                  />
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => setPdfStartPage(Math.min(pdfHandle.numPages, pdfStartPage + 1))}
+                    disabled={pdfStartPage >= pdfHandle.numPages}
+                  >
+                    <ChevronUp className="w-4 h-4" />
+                  </Button>
+                  <span className="text-sm text-muted-foreground ms-1">/ {pdfHandle.numPages}</span>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
