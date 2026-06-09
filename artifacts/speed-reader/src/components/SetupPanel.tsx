@@ -1,14 +1,17 @@
-import React, { useRef } from "react";
+import React, { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Upload, BookOpen } from "lucide-react";
+import { Upload, BookOpen, FileText, Loader2 } from "lucide-react";
 import { ReadingMode } from "@/lib/speed-reader";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Lang, translations } from "@/lib/i18n";
+import { extractTextFromPdf } from "@/lib/pdf-extract";
+
+export type ViewMode = "focused" | "page";
 
 interface SetupPanelProps {
   text: string;
@@ -21,6 +24,8 @@ interface SetupPanelProps {
   setChunkSize: (v: number) => void;
   directionOverride: "auto" | "ltr" | "rtl";
   setDirectionOverride: (v: "auto" | "ltr" | "rtl") => void;
+  viewMode: ViewMode;
+  setViewMode: (v: ViewMode) => void;
   onStart: () => void;
   t: typeof translations["en"];
   lang: Lang;
@@ -33,19 +38,39 @@ export function SetupPanel({
   mode, setMode,
   chunkSize, setChunkSize,
   directionOverride, setDirectionOverride,
+  viewMode, setViewMode,
   onStart, t, lang, onToggleLang
 }: SetupPanelProps) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const txtInputRef = useRef<HTMLInputElement>(null);
+  const pdfInputRef = useRef<HTMLInputElement>(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfError, setPdfError] = useState("");
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleTxtUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (event) => {
-      const content = event.target?.result;
-      if (typeof content === "string") setText(content);
+    reader.onload = (ev) => {
+      if (typeof ev.target?.result === "string") setText(ev.target.result);
     };
     reader.readAsText(file);
+    e.target.value = "";
+  };
+
+  const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPdfLoading(true);
+    setPdfError("");
+    try {
+      const extracted = await extractTextFromPdf(file);
+      setText(extracted);
+    } catch {
+      setPdfError(t.pdfError);
+    } finally {
+      setPdfLoading(false);
+      e.target.value = "";
+    }
   };
 
   return (
@@ -75,23 +100,30 @@ export function SetupPanel({
 
       {/* Text Input */}
       <div className="space-y-4 bg-card border border-border p-6 rounded-xl shadow-sm">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-2">
           <Label htmlFor="text-input" className="text-base font-semibold">{t.yourText}</Label>
-          <div>
-            <input
-              type="file"
-              accept=".txt"
-              className="hidden"
-              ref={fileInputRef}
-              onChange={handleFileUpload}
-              data-testid="input-file-upload"
-            />
-            <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} data-testid="button-upload">
+          <div className="flex items-center gap-2">
+            <input type="file" accept=".txt" className="hidden" ref={txtInputRef} onChange={handleTxtUpload} data-testid="input-file-txt" />
+            <Button variant="outline" size="sm" onClick={() => txtInputRef.current?.click()} data-testid="button-upload-txt">
               <Upload className="w-4 h-4 me-2" />
               {t.uploadTxt}
             </Button>
+            <input type="file" accept=".pdf,application/pdf" className="hidden" ref={pdfInputRef} onChange={handlePdfUpload} data-testid="input-file-pdf" />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => pdfInputRef.current?.click()}
+              disabled={pdfLoading}
+              data-testid="button-upload-pdf"
+            >
+              {pdfLoading
+                ? <><Loader2 className="w-4 h-4 me-2 animate-spin" />{t.uploadingPdf}</>
+                : <><FileText className="w-4 h-4 me-2" />{t.uploadPdf}</>
+              }
+            </Button>
           </div>
         </div>
+        {pdfError && <p className="text-sm text-destructive">{pdfError}</p>}
         <Textarea
           id="text-input"
           value={text}
@@ -107,6 +139,7 @@ export function SetupPanel({
       <div className="grid md:grid-cols-2 gap-6">
         {/* Speed + Mode */}
         <div className="space-y-6 bg-card border border-border p-6 rounded-xl shadow-sm">
+          {/* WPM */}
           <div className="space-y-4">
             <div className="flex justify-between items-center">
               <Label className="text-base font-semibold">{t.readingSpeed}</Label>
@@ -115,26 +148,21 @@ export function SetupPanel({
             <Slider
               value={[wpm]}
               onValueChange={([v]) => setWpm(v)}
-              min={100}
-              max={1000}
-              step={10}
+              min={100} max={1000} step={10}
               className="py-4"
               data-testid="slider-wpm"
             />
             <div className="flex justify-between text-xs text-muted-foreground">
-              <span>100</span>
-              <span>1000</span>
+              <span>100</span><span>1000</span>
             </div>
           </div>
 
+          {/* Chunk mode */}
           <div className="space-y-4">
             <Label className="text-base font-semibold">{t.displayMode}</Label>
             <RadioGroup
               value={mode}
-              onValueChange={(v: ReadingMode) => {
-                setMode(v);
-                setChunkSize(1);
-              }}
+              onValueChange={(v: ReadingMode) => { setMode(v); setChunkSize(1); }}
               className="flex gap-4"
               data-testid="radio-group-mode"
             >
@@ -149,17 +177,13 @@ export function SetupPanel({
             </RadioGroup>
           </div>
 
+          {/* Chunk size */}
           <div className="space-y-4">
             <Label className="text-base font-semibold">
               {mode === "words" ? t.wordsPerChunk : t.linesPerChunk}
             </Label>
-            <Select
-              value={chunkSize.toString()}
-              onValueChange={(v) => setChunkSize(parseInt(v))}
-            >
-              <SelectTrigger data-testid="select-chunk-size">
-                <SelectValue />
-              </SelectTrigger>
+            <Select value={chunkSize.toString()} onValueChange={(v) => setChunkSize(parseInt(v))}>
+              <SelectTrigger data-testid="select-chunk-size"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {mode === "words"
                   ? Array.from({ length: 7 }, (_, i) => i + 1).map(n => (
@@ -178,17 +202,16 @@ export function SetupPanel({
           </div>
         </div>
 
-        {/* Direction */}
+        {/* Direction + View Mode */}
         <div className="space-y-6 bg-card border border-border p-6 rounded-xl shadow-sm">
+          {/* Direction */}
           <div className="space-y-4">
             <Label className="text-base font-semibold">{t.textDirection}</Label>
             <Select
               value={directionOverride}
               onValueChange={(v: "auto" | "ltr" | "rtl") => setDirectionOverride(v)}
             >
-              <SelectTrigger data-testid="select-direction">
-                <SelectValue />
-              </SelectTrigger>
+              <SelectTrigger data-testid="select-direction"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="auto">{t.autoDetect}</SelectItem>
                 <SelectItem value="ltr">{t.leftToRight}</SelectItem>
@@ -196,6 +219,41 @@ export function SetupPanel({
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">{t.autoDetectHint}</p>
+          </div>
+
+          {/* View Mode */}
+          <div className="space-y-3">
+            <Label className="text-base font-semibold">{t.readingView}</Label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setViewMode("focused")}
+                data-testid="button-view-focused"
+                className={[
+                  "p-3 rounded-lg border-2 text-start transition-all",
+                  viewMode === "focused"
+                    ? "border-primary bg-primary/5"
+                    : "border-border hover:border-primary/40"
+                ].join(" ")}
+              >
+                <div className="font-semibold text-sm mb-1">{t.focusedView}</div>
+                <div className="text-xs text-muted-foreground">{t.focusedViewDesc}</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("page")}
+                data-testid="button-view-page"
+                className={[
+                  "p-3 rounded-lg border-2 text-start transition-all",
+                  viewMode === "page"
+                    ? "border-primary bg-primary/5"
+                    : "border-border hover:border-primary/40"
+                ].join(" ")}
+              >
+                <div className="font-semibold text-sm mb-1">{t.pageView}</div>
+                <div className="text-xs text-muted-foreground">{t.pageViewDesc}</div>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -205,7 +263,7 @@ export function SetupPanel({
         <Button
           size="lg"
           onClick={onStart}
-          disabled={!text.trim()}
+          disabled={!text.trim() || pdfLoading}
           className="w-full md:w-auto text-lg px-8 py-6 h-auto"
           data-testid="button-start"
         >

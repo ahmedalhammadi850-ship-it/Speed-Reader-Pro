@@ -1,6 +1,7 @@
 import React, { useState } from "react";
-import { SetupPanel } from "./SetupPanel";
+import { SetupPanel, ViewMode } from "./SetupPanel";
 import { ReaderView } from "./ReaderView";
+import { PageReaderView } from "./PageReaderView";
 import { CompletionScreen } from "./CompletionScreen";
 import { ReadingMode } from "@/lib/speed-reader";
 import { useLanguage } from "@/hooks/use-language";
@@ -8,7 +9,7 @@ import { translations } from "@/lib/i18n";
 
 const SAMPLE_EN = `The ability to read faster and comprehend more is a vital skill in the modern world. Speed reading is not just about moving your eyes quickly across the page; it's about training your brain to process information in chunks rather than reading word by word. By minimizing subvocalization—the internal voice that pronounces every word—you can dramatically increase your reading rate. This tool is designed to help you focus, maintain a steady rhythm, and gradually push your limits. Take a deep breath, clear your mind, and let the words flow.`;
 
-const SAMPLE_AR = `القراءة السريعة مهارة حيوية في عالم اليوم المتسارع. هي ليست مجرد تحريك العيون بسرعة عبر الصفحة، بل هي تدريب العقل على معالجة المعلومات في مجموعات بدلاً من قراءة كل كلمة على حدة. من خلال تقليل النطق الداخلي، وهو الصوت الذاخلي الذي يلفظ كل كلمة، يمكنك زيادة سرعة القراءة بشكل ملحوظ. هذه الأداة مصممة لمساعدتك على التركيز والحفاظ على إيقاع ثابت ودفع حدودك تدريجياً. خذ نفساً عميقاً، وأفرغ ذهنك، ودع الكلمات تتدفق.`;
+const SAMPLE_AR = `القراءة السريعة مهارة حيوية في عالم اليوم المتسارع. هي ليست مجرد تحريك العيون بسرعة عبر الصفحة، بل هي تدريب العقل على معالجة المعلومات في مجموعات بدلاً من قراءة كل كلمة على حدة. من خلال تقليل النطق الداخلي، وهو الصوت الداخلي الذي يلفظ كل كلمة، يمكنك زيادة سرعة القراءة بشكل ملحوظ. هذه الأداة مصممة لمساعدتك على التركيز والحفاظ على إيقاع ثابت ودفع حدودك تدريجياً. خذ نفساً عميقاً، وأفرغ ذهنك، ودع الكلمات تتدفق.`;
 
 export function SpeedReader() {
   const { lang, toggle } = useLanguage();
@@ -20,7 +21,24 @@ export function SpeedReader() {
   const [mode, setMode] = useState<ReadingMode>("words");
   const [chunkSize, setChunkSize] = useState(3);
   const [directionOverride, setDirectionOverride] = useState<"auto" | "ltr" | "rtl">("auto");
+  const [viewMode, setViewMode] = useState<ViewMode>("focused");
   const [stats, setStats] = useState({ totalWords: 0, timeMs: 0, avgWpm: 0 });
+
+  const sharedReaderProps = {
+    text,
+    wpm,
+    mode,
+    chunkSize,
+    directionOverride,
+    onBack: () => setView("setup"),
+    onComplete: (s: { totalWords: number; timeMs: number; avgWpm: number }) => {
+      setStats(s);
+      setView("completed");
+    },
+    t,
+    lang,
+    onToggleLang: toggle,
+  };
 
   return (
     <>
@@ -37,6 +55,8 @@ export function SpeedReader() {
             setChunkSize={setChunkSize}
             directionOverride={directionOverride}
             setDirectionOverride={setDirectionOverride}
+            viewMode={viewMode}
+            setViewMode={setViewMode}
             onStart={() => setView("reading")}
             t={t}
             lang={lang}
@@ -45,22 +65,12 @@ export function SpeedReader() {
         </div>
       )}
 
-      {view === "reading" && (
-        <ReaderView
-          text={text}
-          wpm={wpm}
-          mode={mode}
-          chunkSize={chunkSize}
-          directionOverride={directionOverride}
-          onBack={() => setView("setup")}
-          onComplete={(s) => {
-            setStats(s);
-            setView("completed");
-          }}
-          t={t}
-          lang={lang}
-          onToggleLang={toggle}
-        />
+      {view === "reading" && viewMode === "focused" && (
+        <ReaderView {...sharedReaderProps} />
+      )}
+
+      {view === "reading" && viewMode === "page" && (
+        <PageReaderView {...sharedReaderProps} />
       )}
 
       {view === "completed" && (
