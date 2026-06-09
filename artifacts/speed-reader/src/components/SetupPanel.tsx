@@ -9,9 +9,10 @@ import { Upload, BookOpen, FileText, Loader2 } from "lucide-react";
 import { ReadingMode } from "@/lib/speed-reader";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Lang, translations } from "@/lib/i18n";
-import { extractTextFromPdf, getPdfPageCount } from "@/lib/pdf-extract";
+import { extractTextFromPdf } from "@/lib/pdf-extract";
 
-const LARGE_PDF_THRESHOLD = 100;
+// Files larger than this size (bytes) are treated as "large" → show range picker
+const LARGE_PDF_SIZE_BYTES = 3 * 1024 * 1024; // 3 MB ≈ 100+ pages for typical PDFs
 
 export type ViewMode = "focused" | "page";
 
@@ -50,7 +51,7 @@ export function SetupPanel({
   const [pdfError, setPdfError] = useState("");
 
   const [pendingPdfFile, setPendingPdfFile] = useState<File | null>(null);
-  const [pdfTotalPages, setPdfTotalPages] = useState(0);
+  const [pdfTotalPages, setPdfTotalPages] = useState<number | null>(null);
   const [pdfRangeFrom, setPdfRangeFrom] = useState("1");
   const [pdfRangeTo, setPdfRangeTo] = useState("100");
   const [showRangePicker, setShowRangePicker] = useState(false);
@@ -72,13 +73,21 @@ export function SetupPanel({
     setPdfError("");
     setShowRangePicker(false);
     try {
-      const extracted = await extractTextFromPdf(file, (p) => setPdfProgress(p), range);
+      const { text: extracted, totalPages } = await extractTextFromPdf(
+        file,
+        (p) => setPdfProgress(p),
+        range
+      );
+      setPdfTotalPages(totalPages);
       if (!extracted.trim()) {
-        setPdfError(t.pdfError);
+        setPdfError(lang === "ar"
+          ? "لا يحتوي هذا الملف على نص قابل للاستخراج (قد يكون مسحاً ضوئياً)."
+          : "No extractable text found. This PDF may be a scanned image.");
       } else {
         setText(extracted);
       }
-    } catch {
+    } catch (err) {
+      console.error("PDF extraction error:", err);
       setPdfError(t.pdfError);
     } finally {
       setPdfLoading(false);
@@ -87,27 +96,22 @@ export function SetupPanel({
     }
   };
 
-  const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePdfUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = "";
 
     setPdfError("");
     setShowRangePicker(false);
+    setPdfTotalPages(null);
 
-    try {
-      const totalPages = await getPdfPageCount(file);
-      if (totalPages > LARGE_PDF_THRESHOLD) {
-        setPendingPdfFile(file);
-        setPdfTotalPages(totalPages);
-        setPdfRangeFrom("1");
-        setPdfRangeTo(String(totalPages));
-        setShowRangePicker(true);
-      } else {
-        await runExtraction(file);
-      }
-    } catch {
-      setPdfError(t.pdfError);
+    if (file.size > LARGE_PDF_SIZE_BYTES) {
+      setPendingPdfFile(file);
+      setPdfRangeFrom("1");
+      setPdfRangeTo("100");
+      setShowRangePicker(true);
+    } else {
+      runExtraction(file);
     }
   };
 
@@ -119,7 +123,7 @@ export function SetupPanel({
     if (!pendingPdfFile) return;
     const from = parseInt(pdfRangeFrom, 10);
     const to = parseInt(pdfRangeTo, 10);
-    if (isNaN(from) || isNaN(to) || from < 1 || to < from || to > pdfTotalPages) {
+    if (isNaN(from) || isNaN(to) || from < 1 || to < from) {
       setPdfError(t.pdfPageRangeError);
       return;
     }
@@ -185,7 +189,9 @@ export function SetupPanel({
               {t.pdfLargeFile}
             </p>
             <p className="text-xs text-amber-700 dark:text-amber-400">
-              {t.pdfLargeFileHint.replace("{total}", String(pdfTotalPages))}
+              {lang === "ar"
+                ? "الملف كبير. يمكنك استخراج كل الصفحات أو تحديد نطاق معين لتسريع المعالجة."
+                : "Large file detected. Extract all pages or choose a range for faster processing."}
             </p>
             <div className="flex items-center gap-3 flex-wrap">
               <div className="flex items-center gap-2">
@@ -193,7 +199,6 @@ export function SetupPanel({
                 <input
                   type="number"
                   min={1}
-                  max={pdfTotalPages}
                   value={pdfRangeFrom}
                   onChange={(e) => setPdfRangeFrom(e.target.value)}
                   className="w-20 rounded border border-border bg-background px-2 py-1 text-sm text-center"
@@ -204,7 +209,6 @@ export function SetupPanel({
                 <input
                   type="number"
                   min={1}
-                  max={pdfTotalPages}
                   value={pdfRangeTo}
                   onChange={(e) => setPdfRangeTo(e.target.value)}
                   className="w-20 rounded border border-border bg-background px-2 py-1 text-sm text-center"
@@ -217,6 +221,11 @@ export function SetupPanel({
                 {t.pdfExtractAll}
               </Button>
             </div>
+            {pdfTotalPages !== null && (
+              <p className="text-xs text-amber-600 dark:text-amber-400">
+                {lang === "ar" ? `إجمالي الصفحات: ${pdfTotalPages}` : `Total pages: ${pdfTotalPages}`}
+              </p>
+            )}
           </div>
         )}
 

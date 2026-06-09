@@ -17,69 +17,59 @@ export interface PdfPageRange {
 
 const BATCH_SIZE = 10;
 
-export async function getPdfPageCount(file: File): Promise<number> {
-  const url = URL.createObjectURL(file);
-  try {
-    const loadingTask = pdfjsLib.getDocument({ url });
-    const pdf = await loadingTask.promise;
-    const count = pdf.numPages;
-    pdf.destroy();
-    return count;
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
-
 export async function extractTextFromPdf(
   file: File,
   onProgress?: (p: PdfProgress) => void,
   range?: PdfPageRange
-): Promise<string> {
-  const url = URL.createObjectURL(file);
+): Promise<{ text: string; totalPages: number }> {
+  const arrayBuffer = await file.arrayBuffer();
 
-  try {
-    const loadingTask = pdfjsLib.getDocument({ url });
+  const loadingTask = pdfjsLib.getDocument({
+    data: new Uint8Array(arrayBuffer),
+  });
 
-    const pdf = await loadingTask.promise;
-    const totalPages = pdf.numPages;
+  const pdf = await loadingTask.promise;
+  const totalPages = pdf.numPages;
 
-    const startPage = range ? Math.max(1, range.from) : 1;
-    const endPage = range ? Math.min(totalPages, range.to) : totalPages;
-    const pagesToProcess = endPage - startPage + 1;
+  const startPage = range ? Math.max(1, range.from) : 1;
+  const endPage = range ? Math.min(totalPages, range.to) : totalPages;
+  const pagesToProcess = endPage - startPage + 1;
 
-    if (pagesToProcess <= 0) return "";
-
-    const pageTexts = new Array<string>(pagesToProcess);
-    let completed = 0;
-
-    for (let batchStart = startPage; batchStart <= endPage; batchStart += BATCH_SIZE) {
-      const batchEnd = Math.min(batchStart + BATCH_SIZE - 1, endPage);
-      const pageNums: number[] = [];
-      for (let n = batchStart; n <= batchEnd; n++) pageNums.push(n);
-
-      await Promise.all(
-        pageNums.map(async (n) => {
-          try {
-            const page = await pdf.getPage(n);
-            const content = await page.getTextContent();
-            pageTexts[n - startPage] = content.items
-              .map((item) => ("str" in item ? item.str : ""))
-              .join(" ")
-              .replace(/\s+/g, " ")
-              .trim();
-            page.cleanup();
-          } catch {
-            pageTexts[n - startPage] = "";
-          }
-          completed++;
-          onProgress?.({ current: completed, total: pagesToProcess });
-        })
-      );
-    }
-
-    pdf.destroy();
-    return pageTexts.filter(Boolean).join("\n\n");
-  } finally {
-    URL.revokeObjectURL(url);
+  if (pagesToProcess <= 0) {
+    await pdf.destroy();
+    return { text: "", totalPages };
   }
+
+  const pageTexts = new Array<string>(pagesToProcess);
+  let completed = 0;
+
+  for (let batchStart = startPage; batchStart <= endPage; batchStart += BATCH_SIZE) {
+    const batchEnd = Math.min(batchStart + BATCH_SIZE - 1, endPage);
+    const pageNums: number[] = [];
+    for (let n = batchStart; n <= batchEnd; n++) pageNums.push(n);
+
+    await Promise.all(
+      pageNums.map(async (n) => {
+        try {
+          const page = await pdf.getPage(n);
+          const content = await page.getTextContent();
+          pageTexts[n - startPage] = content.items
+            .map((item) => ("str" in item ? item.str : ""))
+            .join(" ")
+            .replace(/\s+/g, " ")
+            .trim();
+          page.cleanup();
+        } catch {
+          pageTexts[n - startPage] = "";
+        }
+        completed++;
+        onProgress?.({ current: completed, total: pagesToProcess });
+      })
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  await pdf.destroy();
+  return { text: pageTexts.filter(Boolean).join("\n\n"), totalPages };
 }
